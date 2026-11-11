@@ -4,9 +4,8 @@ import React, { useState, useEffect, useRef } from 'react';
 const STORAGE_KEY = 'guepardo_task_state_v2';
 
 const PROJECT_COLORS = [
-  '#FBBF24', '#F97316', '#4B5563', '#3a71ba', 
-  '#53ba3a', '#eb4034', '#a93aba', '#db586e',
-  '#8B5CF6', '#14B8A6', '#10B981', '#111827'
+  '#FBBF24', '#F97316', '#4B5563', '#000000', '#eb4034', '#53ba3a', 
+  '#3aba9a', '#3a71ba', '#a93aba', '#d46e2a', '#d42a2a', '#db586e'
 ];
 
 const INITIAL_PROJECTS = [
@@ -23,8 +22,7 @@ const INITIAL_TASKS = [
 const INITIAL_GANTT = [
   { id: 1, title: 'Projeto Conceptual', start: 1, end: 5, color: '#3a71ba', row: 0 },
   { id: 2, title: 'Validação CAD', start: 7, end: 14, color: '#53ba3a', row: 1 },
-  { id: 3, title: 'Compra Material', start: 9, end: 17, color: '#d46e2a', row: 2 },
-  { id: 4, title: 'Usinagem / Solda', start: 16, end: 28, color: '#eb4034', row: 3 },
+  { id: 3, title: 'Nova Etapa', start: 9, end: 14, color: '#374151', row: 2 },
 ];
 
 const INITIAL_EVENTS = [
@@ -51,9 +49,9 @@ export default function App() {
   const [projects, setProjects] = useState(() => loadInitialState('projects', INITIAL_PROJECTS));
   const [tasks, setTasks] = useState(() => loadInitialState('tasks', INITIAL_TASKS));
   const [ganttSteps, setGanttSteps] = useState(() => loadInitialState('ganttSteps', INITIAL_GANTT));
-  const [dependencies, setDependencies] = useState(() => loadInitialState('dependencies', [{ id: 1, from: 1, to: 2 }, { id: 2, from: 2, to: 3 }]));
+  const [dependencies, setDependencies] = useState(() => loadInitialState('dependencies', [{ id: 1, from: 1, to: 2 }]));
   const [events, setEvents] = useState(() => loadInitialState('events', INITIAL_EVENTS));
-  const [milestones, setMilestones] = useState(() => loadInitialState('milestones', [{ id: 1, title: 'Design Freeze', day: 15 }]));
+  const [milestones, setMilestones] = useState(() => loadInitialState('milestones', [{ id: 1, title: 'Design Freeze', day: 15, color: '#FBBF24' }]));
 
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || 1);
   const [currentDate] = useState(new Date(2026, 10, 4));
@@ -61,13 +59,15 @@ export default function App() {
   const [taskDrawer, setTaskDrawer] = useState({ isOpen: false, taskId: null });
   const [ganttDrawer, setGanttDrawer] = useState({ isOpen: false, stepId: null });
   const [eventDrawer, setEventDrawer] = useState({ isOpen: false, event: null });
+  const [projectDrawer, setProjectDrawer] = useState({ isOpen: false, projectId: null });
+  const [editingGanttTitleId, setEditingGanttTitleId] = useState(null);
 
-  // Estados temporários para inputs da Gaveta de Tarefas
+  // Estados temporários para inputs
   const [draftSubtask, setDraftSubtask] = useState('');
   const [draftLinkName, setDraftLinkName] = useState('');
   const [draftLinkUrl, setDraftLinkUrl] = useState('');
 
-  // Persistência Automática a cada modificação nos dados
+  // Persistência Automática
   useEffect(() => {
     const payload = { projects, tasks, ganttSteps, dependencies, events, milestones };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -150,15 +150,6 @@ export default function App() {
     }
   };
 
-  const editProject = (id) => {
-    const project = projects.find(p => p.id === id);
-    const newName = prompt('Editar nome do projeto:', project.name);
-    const newColor = prompt('Editar cor do projeto (Hex ou Nome, ex: #ff0000):', project.color);
-    if (newName && newColor) {
-      setProjects(projects.map(p => p.id === id ? { ...p, name: newName, color: newColor } : p));
-    }
-  };
-
   // --- GANTT LOGIC ---
   const ganttRef = useRef(null);
 
@@ -176,16 +167,71 @@ export default function App() {
     return updatedSteps;
   };
 
-  const moveGanttStep = (id, deltaX) => {
-    const deltaDays = Math.round(deltaX / 40);
-    if (deltaDays === 0) return;
-    let newSteps = [...ganttSteps];
-    const stepIndex = newSteps.findIndex(s => s.id === id);
-    const step = newSteps[stepIndex];
-    const newStart = Math.max(1, step.start + deltaDays);
-    newSteps[stepIndex] = { ...step, start: newStart, end: Math.min(120, newStart + (step.end - step.start)) };
-    setGanttSteps(propagateDependencies(newSteps, id, deltaDays));
+  const handleGanttAction = (e, actionType, stepId) => {
+    e.stopPropagation();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const stepIndex = ganttSteps.findIndex(s => s.id === stepId);
+    const step = ganttSteps[stepIndex];
+    if (!step) return;
+
+    const initialStart = step.start;
+    const initialEnd = step.end;
+    const initialRow = step.row;
+
+    const handleMouseMove = (moveEvent) => {
+      const deltaDays = Math.round((moveEvent.clientX - startX) / 40);
+      const deltaRows = Math.round((moveEvent.clientY - startY) / 60);
+      let newSteps = [...ganttSteps];
+
+      if (actionType === 'move') {
+        const newStart = Math.max(1, initialStart + deltaDays);
+        const newRow = Math.max(0, initialRow + deltaRows);
+        const duration = initialEnd - initialStart;
+        newSteps[stepIndex] = { ...step, start: newStart, end: newStart + duration, row: newRow };
+        setGanttSteps(propagateDependencies(newSteps, stepId, newStart - initialStart));
+      } else if (actionType === 'resizeLeft') {
+        const newStart = Math.min(initialEnd, Math.max(1, initialStart + deltaDays));
+        newSteps[stepIndex] = { ...step, start: newStart };
+        setGanttSteps(propagateDependencies(newSteps, stepId, newStart - initialStart));
+      } else if (actionType === 'resizeRight') {
+        const newEnd = Math.max(initialStart, initialEnd + deltaDays);
+        newSteps[stepIndex] = { ...step, end: newEnd };
+        setGanttSteps(propagateDependencies(newSteps, stepId, 0));
+      }
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
   };
+
+  const handleMilestoneDrag = (e, milestoneId) => {
+    e.stopPropagation();
+    const startX = e.clientX;
+    const milestone = milestones.find(m => m.id === milestoneId);
+    if (!milestone) return;
+    
+    const initialDay = milestone.day;
+
+    const handleMouseMove = (moveEvent) => {
+      const deltaDays = Math.round((moveEvent.clientX - startX) / 40);
+      const newDay = Math.max(1, initialDay + deltaDays);
+      setMilestones(prev => prev.map(m => m.id === milestoneId ? { ...m, day: newDay } : m));
+    };
+
+    const handleMouseUp = () => {
+      document.removeEventListener('mousemove', handleMouseMove);
+      document.removeEventListener('mouseup', handleMouseUp);
+    };
+
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
   const deleteDependency = (depId) => setDependencies(dependencies.filter(d => d.id !== depId));
   const updateGanttStep = (id, updates) => setGanttSteps(ganttSteps.map(s => s.id === id ? { ...s, ...updates } : s));
 
@@ -196,25 +242,34 @@ export default function App() {
         <img src="guepardo_logo.png" alt="Símbolo Guepardo" className="w-8 h-8 md:w-16 md:h-16 object-contain md:mb-3" />
         <img src="guepardo_text.png" alt="Guepardo Motoracing" className="hidden md:block w-full h-8 object-contain" />
       </div>
-      <nav className="flex-1 flex flex-row md:flex-col justify-center items-center md:items-stretch p-2 md:p-4 gap-4 md:gap-0 md:space-y-2">
-        <button onClick={() => setActiveTab('kanban')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'kanban' ? 'bg-[#FF6B00] font-bold' : 'hover:bg-gray-800'}`}>
+      
+      <nav className="flex-1 flex flex-row md:flex-col justify-center items-center md:items-stretch p-2 md:p-4 gap-4 md:gap-2 md:space-y-2">
+        <button onClick={() => setActiveTab('kanban')} className={`p-3 rounded-lg flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'kanban' ? 'bg-[#FF6B00] font-bold text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="2"/><path strokeLinecap="round" strokeWidth="2" d="M9 4v16M15 4v16"/></svg>
           <span className="hidden md:block">Kanban</span>
         </button>
-        <button onClick={() => setActiveTab('gantt')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'gantt' ? 'bg-[#FF6B00] font-bold' : 'hover:bg-gray-800'}`}>
+        <button onClick={() => setActiveTab('gantt')} className={`p-3 rounded-lg flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'gantt' ? 'bg-[#FF6B00] font-bold text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h6M4 12h10M4 18h6 M12 6h8 M16 18h4"></path></svg>
           <span className="hidden md:block">Gantt</span>
         </button>
-        <button onClick={() => setActiveTab('calendar')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'calendar' ? 'bg-[#FF6B00] font-bold' : 'hover:bg-gray-800'}`}>
+        <button onClick={() => setActiveTab('calendar')} className={`p-3 rounded-lg flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'calendar' ? 'bg-[#FF6B00] font-bold text-white' : 'hover:bg-gray-800 text-gray-300'}`}>
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line strokeLinecap="round" strokeWidth="2" x1="16" y1="2" x2="16" y2="6"></line><line strokeLinecap="round" strokeWidth="2" x1="8" y1="2" x2="8" y2="6"></line><line strokeLinecap="round" strokeWidth="2" x1="3" y1="10" x2="21" y2="10"></line></svg>
           <span className="hidden md:block">Calendário</span>
         </button>
       </nav>
-      <div className="hidden md:flex flex-col gap-2 p-4 border-t border-gray-800 text-xs">
-        <button onClick={handleExportBackup} className="w-full bg-[#2A2D3A] hover:bg-gray-700 text-gray-200 py-2 px-3 rounded font-bold flex items-center justify-center transition-colors">
-          Exportar Backup
-        </button>
-        <label className="w-full bg-[#2A2D3A] hover:bg-gray-700 text-gray-200 py-2 px-3 rounded font-bold flex items-center justify-center cursor-pointer transition-colors">
-          Importar Backup
-          <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
-        </label>
+
+      {/* Backup e Logo da USP no final */}
+      <div className="hidden md:flex flex-col gap-3 p-4 pt-6 border-t border-gray-800 mt-auto">
+        <div className="flex flex-col gap-2 text-xs">
+          <button onClick={handleExportBackup} className="w-full bg-[#2A2D3A] hover:bg-gray-700 text-gray-200 py-2.5 px-3 rounded font-bold transition-colors">
+            Exportar Backup
+          </button>
+          <label className="w-full bg-[#2A2D3A] hover:bg-gray-700 text-gray-200 py-2.5 px-3 rounded font-bold text-center cursor-pointer transition-colors">
+            Importar Backup
+            <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
+          </label>
+        </div>
+        <img src="eesc_usp_logo.png" alt="EESC USP" className="w-full h-auto mt-2 object-contain filter invert brightness-0 opacity-80 hover:opacity-100 transition-opacity" />
       </div>
     </div>
   );
@@ -226,7 +281,6 @@ export default function App() {
 
     return (
       <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden relative">
-        {/* ABAS DE NAVEGADOR PARA PROJETOS */}
         <div className="pt-4 px-4 bg-white border-b shadow-sm z-10 flex gap-2 overflow-x-auto items-end h-16">
           {projects.map(p => (
             <div 
@@ -235,7 +289,7 @@ export default function App() {
               style={{ backgroundColor: p.color }}
             >
               <span onClick={() => setSelectedProjectId(p.id)} className="flex-1 text-sm truncate">{p.name}</span>
-              <button onClick={() => editProject(p.id)} className="opacity-0 group-hover:opacity-100 text-white bg-black/20 hover:bg-black/40 rounded px-2 py-0.5 ml-2 text-xs transition-opacity">✎</button>
+              <button onClick={(e) => { e.stopPropagation(); setProjectDrawer({ isOpen: true, projectId: p.id }); }} className="opacity-0 group-hover:opacity-100 text-white bg-black/20 hover:bg-black/40 rounded px-2 py-0.5 ml-2 text-xs transition-opacity">✎</button>
             </div>
           ))}
           <button onClick={addProject} className="p-2.5 pb-2 mb-0.5 rounded-t-lg cursor-pointer font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors flex items-center justify-center w-10 text-sm">
@@ -273,7 +327,42 @@ export default function App() {
           ))}
         </div>
 
-        {/* GAVETA LATERAL KANBAN (IMAGEM 2) */}
+        {/* GAVETA DE EDIÇÃO DO PROJETO */}
+        {projectDrawer.isOpen && (
+          <div className="absolute top-0 right-0 w-full md:w-80 h-full bg-white shadow-2xl md:border-l p-6 z-50">
+             {(() => {
+               const proj = projects.find(p => p.id === projectDrawer.projectId);
+               if (!proj) return null;
+               return (
+                 <div className="flex flex-col h-full space-y-5">
+                    <div className="flex justify-between items-center pb-4 border-b">
+                      <h2 className="text-lg font-bold text-[#2A3143]">Editar Projeto</h2>
+                      <button onClick={() => setProjectDrawer({ isOpen: false, projectId: null })} className="text-gray-400 hover:text-gray-800 text-xl font-light">✕</button>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Nome do Projeto</label>
+                      <input className="w-full p-2.5 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none" value={proj.name} onChange={e => setProjects(projects.map(p => p.id === proj.id ? { ...p, name: e.target.value } : p))} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-500 mb-2 uppercase">Cor do Projeto</label>
+                      <div className="flex flex-wrap gap-2">
+                        {PROJECT_COLORS.map(c => (
+                          <button key={c} onClick={() => setProjects(projects.map(p => p.id === proj.id ? { ...p, color: c } : p))} className={`w-7 h-7 rounded-full shadow-sm border-2 ${proj.color === c ? 'border-gray-900 scale-125' : 'border-transparent hover:scale-110'} transition-transform`} style={{ backgroundColor: c }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-auto pt-4 border-t">
+                      <button onClick={() => { if(confirm('Tem certeza que deseja excluir o projeto e as tarefas associadas?')){ setProjects(projects.filter(p => p.id !== proj.id)); setTasks(tasks.filter(t => t.projectId !== proj.id)); setProjectDrawer({ isOpen: false, projectId: null }); setSelectedProjectId(projects[0]?.id || null); } }} className="text-xs text-red-500 font-bold hover:underline">
+                        Excluir Projeto
+                      </button>
+                    </div>
+                 </div>
+               )
+             })()}
+          </div>
+        )}
+
+        {/* GAVETA LATERAL KANBAN */}
         {taskDrawer.isOpen && (
           <div className="absolute top-0 right-0 w-full md:w-[420px] h-full bg-white shadow-2xl md:border-l p-6 z-50 overflow-y-auto">
             {(() => {
@@ -368,10 +457,9 @@ export default function App() {
       const toStep = ganttSteps.find(s => s.id === dep.to);
       if (!fromStep || !toStep) return null;
       const startX = fromStep.end * 40;
-      const startY = (fromStep.row * 60) + 70 + 20;
+      const startY = (fromStep.row * 60) + 70;
       const endX = (toStep.start - 1) * 40;
-      const endY = (toStep.row * 60) + 70 + 20;
-      // Curva em S idêntica à Imagem 4
+      const endY = (toStep.row * 60) + 70;
       const pathData = `M ${startX} ${startY} C ${startX + 15} ${startY}, ${endX - 15} ${endY}, ${endX} ${endY}`;
       return (
         <g key={dep.id}>
@@ -383,11 +471,16 @@ export default function App() {
 
     return (
       <div className="flex-1 flex flex-col bg-white overflow-hidden relative">
-        {/* CABEÇALHO DO GANTT (IMAGEM 4) */}
         <div className="flex justify-between items-center p-4 md:px-8 border-b bg-gray-50 z-30">
            <h2 className="text-xl md:text-2xl font-bold text-[#1A202C]">Cronograma / Gantt</h2>
            <div className="flex gap-2">
-             <button onClick={() => { const day = parseInt(prompt('Dia do Milestone (1-120):')); const title = prompt('Título:'); if(day && title) setMilestones([...milestones, {id: Date.now(), title, day}]); }} className="bg-[#FBBF24] hover:bg-[#F59E0B] text-black px-3 md:px-4 py-2 font-bold text-sm rounded shadow-sm flex items-center gap-1 transition-colors">
+             <button 
+                onClick={() => { 
+                  const maxEnd = ganttSteps.length > 0 ? Math.max(...ganttSteps.map(s => s.end)) : 1;
+                  setMilestones([...milestones, {id: Date.now(), title: 'Novo Milestone', day: maxEnd, color: '#FBBF24'}]); 
+                }} 
+                className="bg-[#FBBF24] hover:bg-[#F59E0B] text-black px-3 md:px-4 py-2 font-bold text-sm rounded shadow-sm flex items-center gap-1 transition-colors"
+             >
                <span className="text-lg leading-none">⚑</span> Novo Milestone
              </button>
              <button onClick={() => setGanttSteps([...ganttSteps, {id: Date.now(), title: 'Nova Etapa', start: 1, end: 5, color: '#374151', row: ganttSteps.length}])} className="bg-[#374151] hover:bg-gray-900 text-white px-3 md:px-4 py-2 font-bold text-sm rounded shadow-sm transition-colors">
@@ -406,10 +499,22 @@ export default function App() {
               {days.map(d => <div key={d} className="w-[40px] flex-shrink-0 border-r border-gray-300"></div>)}
             </div>
             
-            {/* RENDERIZAÇÃO DOS MILESTONES */}
+            {/* MILESTONES CORRIGIDOS COM POINTER-EVENTS ATIVO */}
             {milestones.map(m => (
-              <div key={m.id} className="absolute top-0 h-full border-l-2 border-[#FBBF24] z-10 pointer-events-none" style={{ left: `${(m.day - 1) * 40}px` }}>
-                <div className="absolute top-[42px] -left-[14px] bg-[#FBBF24] text-black text-[10px] font-bold px-1 py-0.5 rounded shadow pointer-events-auto cursor-pointer hover:scale-110 transition-transform" onDoubleClick={() => { if(confirm('Excluir este milestone?')) setMilestones(milestones.filter(x => x.id !== m.id)); }}>
+              <div key={m.id} className="absolute top-0 h-full w-0.5 z-20" style={{ left: `${(m.day - 1) * 40 + 20}px`, backgroundColor: m.color || '#FBBF24' }}>
+                <div 
+                  className="absolute top-[42px] left-1/2 -translate-x-1/2 text-[10px] font-bold px-1.5 py-0.5 rounded shadow cursor-grab active:cursor-grabbing hover:scale-110 transition-transform select-none" 
+                  style={{ backgroundColor: m.color || '#FBBF24', color: m.color === '#ef4444' ? 'white' : 'black' }}
+                  onDoubleClick={(e) => {
+                    e.stopPropagation();
+                    setMilestones(milestones.map(mile => mile.id === m.id ? { ...mile, color: mile.color === '#FBBF24' ? '#ef4444' : '#FBBF24' } : mile));
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    setMilestones(milestones.filter(mile => mile.id !== m.id));
+                  }}
+                  onMouseDown={(e) => handleMilestoneDrag(e, m.id)}
+                >
                   ⚑
                 </div>
               </div>
@@ -419,18 +524,35 @@ export default function App() {
             
             {ganttSteps.map(step => (
               <div 
-                key={step.id} className="absolute h-10 rounded shadow-md flex items-center px-4 text-white font-bold text-sm cursor-grab group z-20 hover:brightness-110 transition-[filter]"
+                key={step.id} className="absolute h-10 rounded shadow-md flex items-center text-white font-bold text-sm group z-20 hover:brightness-110 transition-[filter]"
                 style={{ left: `${(step.start - 1) * 40}px`, width: `${(step.end - step.start + 1) * 40}px`, top: `${step.row * 60 + 50}px`, backgroundColor: step.color }}
-                onDoubleClick={() => setGanttDrawer({ isOpen: true, stepId: step.id })}
-                onMouseDown={(e) => {
-                  if (e.target.tagName === 'INPUT') return;
-                  const startX = e.clientX;
-                  const handleMouseMove = (moveEvent) => moveGanttStep(step.id, moveEvent.clientX - startX);
-                  const handleMouseUp = () => { document.removeEventListener('mousemove', handleMouseMove); document.removeEventListener('mouseup', handleMouseUp); };
-                  document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
-                }}
               >
-                <span className="truncate pointer-events-none">{step.title}</span>
+                {/* Esticador Esquerdo */}
+                <div className="absolute left-0 top-0 w-3 h-full cursor-w-resize bg-black/0 hover:bg-black/10 rounded-l" onMouseDown={(e) => handleGanttAction(e, 'resizeLeft', step.id)} />
+
+                {/* Arrastar e Editar (Meio) */}
+                <div className="flex-1 w-full h-full flex items-center px-4 cursor-grab active:cursor-grabbing overflow-hidden" onMouseDown={(e) => handleGanttAction(e, 'move', step.id)}>
+                   {editingGanttTitleId === step.id ? (
+                      <input
+                        autoFocus
+                        className="bg-black/20 border-none text-white outline-none w-full font-bold px-1 rounded shadow-inner"
+                        defaultValue={step.title}
+                        onBlur={(e) => { updateGanttStep(step.id, { title: e.target.value }); setEditingGanttTitleId(null); }}
+                        onKeyDown={(e) => { if(e.key === 'Enter') e.target.blur(); }}
+                        onMouseDown={e => e.stopPropagation()}
+                      />
+                   ) : (
+                      <span className="truncate w-full select-none" onDoubleClick={(e) => { e.stopPropagation(); setEditingGanttTitleId(step.id); }}>
+                        {step.title}
+                      </span>
+                   )}
+                </div>
+
+                {/* Botão de Configuração Oculto (Aparece ao Hover) */}
+                <button onClick={() => setGanttDrawer({ isOpen: true, stepId: step.id })} className="absolute right-4 opacity-0 group-hover:opacity-100 text-white bg-black/20 hover:bg-black/40 rounded px-1.5 py-0.5 text-[10px] transition-opacity z-10" onMouseDown={e => e.stopPropagation()}>⚙️</button>
+
+                {/* Esticador Direito */}
+                <div className="absolute right-0 top-0 w-3 h-full cursor-e-resize bg-black/0 hover:bg-black/10 rounded-r" onMouseDown={(e) => handleGanttAction(e, 'resizeRight', step.id)} />
               </div>
             ))}
           </div>
@@ -559,7 +681,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* GAVETA LATERAL DO EVENTO (IMAGEM 5) */}
+        {/* GAVETA LATERAL DO EVENTO */}
         {eventDrawer.isOpen && (
           <div className="absolute top-0 right-0 w-full md:w-[380px] h-full bg-white shadow-2xl md:border-l p-6 z-50">
              <div className="flex flex-col h-full space-y-5">
