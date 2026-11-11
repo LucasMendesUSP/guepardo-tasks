@@ -4,31 +4,31 @@ import React, { useState, useEffect, useRef } from 'react';
 const STORAGE_KEY = 'guepardo_task_state_v2';
 
 const PROJECT_COLORS = [
-  '#eb4034', '#53ba3a', '#3aba9a', '#3a71ba', 
-  '#a93aba', '#d46e2a', '#d42a2a', '#db586e',
-  '#FBBF24', '#F97316', '#374151', '#111827'
+  '#FBBF24', '#F97316', '#4B5563', '#3a71ba', 
+  '#53ba3a', '#eb4034', '#a93aba', '#db586e',
+  '#8B5CF6', '#14B8A6', '#10B981', '#111827'
 ];
 
 const INITIAL_PROJECTS = [
   { id: 1, name: 'Baja SAE 2027', color: '#FBBF24' },
   { id: 2, name: 'Manufatura Chassi', color: '#F97316' },
-  { id: 3, name: 'Pesquisa Materiais', color: '#374151' }
+  { id: 3, name: 'Pesquisa Materiais', color: '#4B5563' }
 ];
 
 const INITIAL_TASKS = [
-  { id: 1, projectId: 1, title: 'Projeto Conceptual', column: 'fazer', priority: 'alta', createdAt: '04/11/2026', lastMovedAt: null, links: [], subtasks: [] },
-  { id: 2, projectId: 1, title: 'Validação CAD e simulação de elementos finitos no Chassi', column: 'fazendo', priority: 'urgente', createdAt: '02/11/2026', lastMovedAt: '04/11/2026 14:30', links: [], subtasks: [] },
+  { id: 1, projectId: 1, title: 'Projeto Conceptual', column: 'feito', priority: 'alta', subgroup: 'Projeto', description: '', createdAt: '04/11/2026', lastMovedAt: '11/11/2026 15:34', links: [], subtasks: [] },
+  { id: 2, projectId: 1, title: 'Validação CAD e simulação de elementos finitos no Chassi', column: 'fazendo', priority: 'urgente', subgroup: 'FEA', description: '', createdAt: '02/11/2026', lastMovedAt: '04/11/2026 14:30', links: [], subtasks: [] },
 ];
 
 const INITIAL_GANTT = [
   { id: 1, title: 'Projeto Conceptual', start: 1, end: 5, color: '#3a71ba', row: 0 },
-  { id: 2, title: 'Validação CAD', start: 6, end: 12, color: '#53ba3a', row: 1 },
+  { id: 2, title: 'Validação CAD', start: 7, end: 14, color: '#53ba3a', row: 1 },
+  { id: 3, title: 'Compra Material', start: 9, end: 17, color: '#d46e2a', row: 2 },
+  { id: 4, title: 'Usinagem / Solda', start: 16, end: 28, color: '#eb4034', row: 3 },
 ];
 
 const INITIAL_EVENTS = [
-  { id: 1, title: 'Entrega Relatório', date: '2026-11-20', type: 'marco', color: '#eb4034' },
-  { id: 2, title: 'Reunião Geral', date: '2026-11-28', type: 'marco', color: '#3a71ba' },
-  { id: 3, title: 'Feriado', date: '2026-11-15', type: 'feriado', color: '#374151' },
+  { id: 1, title: 'Reunião Geral', date: '2026-11-28', type: 'Evento Normal', description: 'Alinhamento com capitão', color: '#3a71ba' },
 ];
 
 export default function App() {
@@ -51,16 +51,21 @@ export default function App() {
   const [projects, setProjects] = useState(() => loadInitialState('projects', INITIAL_PROJECTS));
   const [tasks, setTasks] = useState(() => loadInitialState('tasks', INITIAL_TASKS));
   const [ganttSteps, setGanttSteps] = useState(() => loadInitialState('ganttSteps', INITIAL_GANTT));
-  const [dependencies, setDependencies] = useState(() => loadInitialState('dependencies', [{ id: 1, from: 1, to: 2 }]));
+  const [dependencies, setDependencies] = useState(() => loadInitialState('dependencies', [{ id: 1, from: 1, to: 2 }, { id: 2, from: 2, to: 3 }]));
   const [events, setEvents] = useState(() => loadInitialState('events', INITIAL_EVENTS));
-  const [milestones, setMilestones] = useState(() => loadInitialState('milestones', [{ id: 1, title: 'Design Freeze', day: 15, isDeadline: false }]));
+  const [milestones, setMilestones] = useState(() => loadInitialState('milestones', [{ id: 1, title: 'Design Freeze', day: 15 }]));
 
-  const [selectedProjectId, setSelectedProjectId] = useState(1);
+  const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || 1);
   const [currentDate] = useState(new Date(2026, 10, 4));
 
   const [taskDrawer, setTaskDrawer] = useState({ isOpen: false, taskId: null });
   const [ganttDrawer, setGanttDrawer] = useState({ isOpen: false, stepId: null });
   const [eventDrawer, setEventDrawer] = useState({ isOpen: false, event: null });
+
+  // Estados temporários para inputs da Gaveta de Tarefas
+  const [draftSubtask, setDraftSubtask] = useState('');
+  const [draftLinkName, setDraftLinkName] = useState('');
+  const [draftLinkUrl, setDraftLinkUrl] = useState('');
 
   // Persistência Automática a cada modificação nos dados
   useEffect(() => {
@@ -68,7 +73,6 @@ export default function App() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   }, [projects, tasks, ganttSteps, dependencies, events, milestones]);
 
-  // Funções de Importação e Exportação de Backup
   const handleExportBackup = () => {
     const payload = { projects, tasks, ganttSteps, dependencies, events, milestones };
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
@@ -118,12 +122,44 @@ export default function App() {
     const taskId = parseInt(e.dataTransfer.getData('taskId'));
     setTasks(tasks.map(t => t.id === taskId ? { ...t, column, lastMovedAt: getCurrentFormattedDate() } : t));
   };
-  const addTask = (column) => setTasks([...tasks, { id: Date.now(), projectId: selectedProjectId, title: 'Nova Tarefa', column, priority: 'media', createdAt: getShortDate(), lastMovedAt: null, links: [], subtasks: [] }]);
+  const addTask = (column) => setTasks([...tasks, { id: Date.now(), projectId: selectedProjectId, title: 'Nova Tarefa', column, priority: 'media', subgroup: '', description: '', createdAt: getShortDate(), lastMovedAt: null, links: [], subtasks: [] }]);
   const updateTask = (id, updates) => setTasks(tasks.map(t => t.id === id ? { ...t, ...updates } : t));
 
+  const handleAddSubtask = (taskId) => {
+    if (!draftSubtask.trim()) return;
+    const task = tasks.find(t => t.id === taskId);
+    updateTask(taskId, { subtasks: [...(task.subtasks||[]), { title: draftSubtask, completed: false }] });
+    setDraftSubtask('');
+  };
+
+  const handleAddLink = (taskId) => {
+    if (!draftLinkUrl.trim()) return;
+    const task = tasks.find(t => t.id === taskId);
+    updateTask(taskId, { links: [...(task.links||[]), { name: draftLinkName || 'Link', url: draftLinkUrl }] });
+    setDraftLinkName('');
+    setDraftLinkUrl('');
+  };
+
+  const addProject = () => {
+    const name = prompt('Nome do novo projeto:');
+    if (name) {
+      const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
+      const newId = Date.now();
+      setProjects([...projects, { id: newId, name, color }]);
+      setSelectedProjectId(newId);
+    }
+  };
+
+  const editProject = (id) => {
+    const project = projects.find(p => p.id === id);
+    const newName = prompt('Editar nome do projeto:', project.name);
+    const newColor = prompt('Editar cor do projeto (Hex ou Nome, ex: #ff0000):', project.color);
+    if (newName && newColor) {
+      setProjects(projects.map(p => p.id === id ? { ...p, name: newName, color: newColor } : p));
+    }
+  };
+
   // --- GANTT LOGIC ---
-  const [isConnecting, setIsConnecting] = useState(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const ganttRef = useRef(null);
 
   const propagateDependencies = (steps, stepId, deltaDays) => {
@@ -151,50 +187,34 @@ export default function App() {
     setGanttSteps(propagateDependencies(newSteps, id, deltaDays));
   };
   const deleteDependency = (depId) => setDependencies(dependencies.filter(d => d.id !== depId));
+  const updateGanttStep = (id, updates) => setGanttSteps(ganttSteps.map(s => s.id === id ? { ...s, ...updates } : s));
 
   // --- RENDERIZADORES ---
   const renderSidebar = () => (
-    <div className="w-full h-16 md:w-64 md:h-full bg-gray-900 text-white flex flex-row md:flex-col shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.3)] md:shadow-2xl relative z-50 shrink-0">
-      
+    <div className="w-full h-16 md:w-64 md:h-full bg-[#1A1C23] text-white flex flex-row md:flex-col shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.3)] md:shadow-2xl relative z-50 shrink-0">
       <div className="p-3 md:p-6 flex flex-col items-center justify-center border-r md:border-r-0 md:border-b border-gray-800 w-20 md:w-full shrink-0">
         <img src="guepardo_logo.png" alt="Símbolo Guepardo" className="w-8 h-8 md:w-16 md:h-16 object-contain md:mb-3" />
         <img src="guepardo_text.png" alt="Guepardo Motoracing" className="hidden md:block w-full h-8 object-contain" />
       </div>
-      
       <nav className="flex-1 flex flex-row md:flex-col justify-center items-center md:items-stretch p-2 md:p-4 gap-4 md:gap-0 md:space-y-2">
-        <button onClick={() => setActiveTab('kanban')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'kanban' ? 'bg-orange-600 font-bold' : 'hover:bg-gray-800'}`}>
-          <svg className="w-6 h-6 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 17V7m0 10a2 2 0 01-2 2H5a2 2 0 01-2-2V7a2 2 0 012-2h2a2 2 0 012 2m0 10a2 2 0 002 2h2a2 2 0 002-2M9 7a2 2 0 012-2h2a2 2 0 012 2m0 10V7m0 10a2 2 0 002 2h2a2 2 0 002-2V7a2 2 0 00-2-2h-2a2 2 0 00-2 2"></path></svg>
+        <button onClick={() => setActiveTab('kanban')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'kanban' ? 'bg-[#FF6B00] font-bold' : 'hover:bg-gray-800'}`}>
           <span className="hidden md:block">Kanban</span>
         </button>
-        <button onClick={() => setActiveTab('gantt')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'gantt' ? 'bg-orange-600 font-bold' : 'hover:bg-gray-800'}`}>
-          <svg className="w-6 h-6 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h7"></path></svg>
+        <button onClick={() => setActiveTab('gantt')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'gantt' ? 'bg-[#FF6B00] font-bold' : 'hover:bg-gray-800'}`}>
           <span className="hidden md:block">Gantt</span>
         </button>
-        <button onClick={() => setActiveTab('calendar')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'calendar' ? 'bg-orange-600 font-bold' : 'hover:bg-gray-800'}`}>
-          <svg className="w-6 h-6 md:w-5 md:h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+        <button onClick={() => setActiveTab('calendar')} className={`p-3 rounded-xl md:rounded flex items-center justify-center md:justify-start gap-3 transition-colors ${activeTab === 'calendar' ? 'bg-[#FF6B00] font-bold' : 'hover:bg-gray-800'}`}>
           <span className="hidden md:block">Calendário</span>
         </button>
       </nav>
-
-      {/* PAINEL DE BACKUP (POSICIONADO LOGO ACIMA DA LOGO EESC-USP) */}
       <div className="hidden md:flex flex-col gap-2 p-4 border-t border-gray-800 text-xs">
-        <button 
-          onClick={handleExportBackup}
-          className="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 py-2 px-3 rounded font-bold flex items-center justify-center gap-2 transition-colors"
-        >
-          <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+        <button onClick={handleExportBackup} className="w-full bg-[#2A2D3A] hover:bg-gray-700 text-gray-200 py-2 px-3 rounded font-bold flex items-center justify-center transition-colors">
           Exportar Backup
         </button>
-
-        <label className="w-full bg-gray-800 hover:bg-gray-700 text-gray-200 py-2 px-3 rounded font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors">
-          <svg className="w-4 h-4 text-orange-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"></path></svg>
+        <label className="w-full bg-[#2A2D3A] hover:bg-gray-700 text-gray-200 py-2 px-3 rounded font-bold flex items-center justify-center cursor-pointer transition-colors">
           Importar Backup
           <input type="file" accept=".json" onChange={handleImportBackup} className="hidden" />
         </label>
-      </div>
-
-      <div className="p-3 md:p-6 md:mt-auto flex items-center justify-center border-l md:border-l-0 border-gray-800 w-20 md:w-full shrink-0">
-        <img src="eesc_usp_logo.png" alt="EESC USP" className="w-12 md:w-full object-contain filter invert brightness-0 opacity-80 hover:opacity-100 transition-opacity" />
       </div>
     </div>
   );
@@ -205,127 +225,129 @@ export default function App() {
     const activeProject = projects.find(p => p.id === selectedProjectId);
 
     return (
-      <div className="flex-1 flex flex-col h-full bg-gray-100 overflow-hidden relative">
-        <div className="p-4 md:p-6 bg-white border-b shadow-sm z-10 flex gap-4 overflow-x-auto">
+      <div className="flex-1 flex flex-col h-full bg-gray-50 overflow-hidden relative">
+        {/* ABAS DE NAVEGADOR PARA PROJETOS */}
+        <div className="pt-4 px-4 bg-white border-b shadow-sm z-10 flex gap-2 overflow-x-auto items-end h-16">
           {projects.map(p => (
             <div 
               key={p.id} 
-              onClick={() => setSelectedProjectId(p.id)}
-              className={`p-3 md:p-4 rounded-lg cursor-pointer min-w-[150px] md:min-w-[200px] font-bold text-white shadow-md transition-transform hover:-translate-y-1 ${p.id === selectedProjectId ? 'ring-4 ring-gray-900 ring-offset-2' : 'opacity-80'}`}
+              className={`group relative p-3 pb-2 rounded-t-lg cursor-pointer min-w-[150px] font-bold text-white transition-all flex justify-between items-center ${p.id === selectedProjectId ? 'border-b-0 z-20 shadow-md ring-2 ring-offset-2 ring-gray-400' : 'opacity-70 hover:opacity-100'}`}
               style={{ backgroundColor: p.color }}
             >
-              {p.name}
+              <span onClick={() => setSelectedProjectId(p.id)} className="flex-1 text-sm truncate">{p.name}</span>
+              <button onClick={() => editProject(p.id)} className="opacity-0 group-hover:opacity-100 text-white bg-black/20 hover:bg-black/40 rounded px-2 py-0.5 ml-2 text-xs transition-opacity">✎</button>
             </div>
           ))}
+          <button onClick={addProject} className="p-2.5 pb-2 mb-0.5 rounded-t-lg cursor-pointer font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 transition-colors flex items-center justify-center w-10 text-sm">
+            +
+          </button>
         </div>
 
-        <div className="flex-1 flex overflow-x-auto p-4 md:p-6 gap-6 items-start">
+        <div className="flex-1 flex overflow-x-auto p-4 md:p-8 gap-6 items-start">
           {columns.map(col => (
-            <div key={col} className="bg-gray-200 rounded-xl p-4 w-72 md:w-80 shrink-0 flex flex-col shadow-inner" onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, col)}>
-              <h3 className="font-bold text-gray-700 capitalize mb-4 uppercase text-sm tracking-wider">{col}</h3>
+            <div key={col} className="bg-[#E5E7EB] rounded-lg p-4 w-72 md:w-[340px] shrink-0 flex flex-col shadow-sm border border-gray-200" onDragOver={(e) => e.preventDefault()} onDrop={(e) => handleDrop(e, col)}>
+              <h3 className="font-bold text-gray-700 mb-4 uppercase text-xs tracking-wider">{col}</h3>
               <div className="flex-1 flex flex-col gap-3 min-h-[100px]">
                 {projectTasks.filter(t => t.column === col).map(task => (
-                  <div key={task.id} draggable onDragStart={(e) => handleDragStart(e, task.id)} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100 cursor-grab active:cursor-grabbing hover:shadow-md transition-shadow group relative flex flex-col justify-between">
-                    
+                  <div key={task.id} draggable onDragStart={(e) => handleDragStart(e, task.id)} onClick={() => setTaskDrawer({ isOpen: true, taskId: task.id })} className="bg-white p-4 rounded shadow-sm border border-gray-100 cursor-grab hover:shadow-md transition-shadow group relative flex flex-col justify-between">
                     <div className="flex justify-between items-start gap-2 mb-2">
-                      <select 
-                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full outline-none appearance-none cursor-pointer uppercase ${task.priority === 'urgente' ? 'bg-red-100 text-red-700' : task.priority === 'alta' ? 'bg-orange-100 text-orange-700' : task.priority === 'media' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`} 
-                        value={task.priority} 
-                        onChange={(e) => updateTask(task.id, { priority: e.target.value })} 
-                        onMouseDown={(e) => e.stopPropagation()}
-                      >
-                        <option value="baixa">Baixa</option>
-                        <option value="media">Média</option>
-                        <option value="alta">Alta</option>
-                        <option value="urgente">Urgente</option>
-                      </select>
-
-                      <button onClick={() => setTaskDrawer({ isOpen: true, taskId: task.id })} className="md:opacity-0 md:group-hover:opacity-100 font-bold px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded transition-all text-sm leading-none">+</button>
+                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${task.priority === 'urgente' ? 'bg-red-100 text-red-700' : task.priority === 'alta' ? 'bg-orange-100 text-orange-700' : task.priority === 'media' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                        {task.priority}
+                      </span>
                     </div>
-
-                    {/* CAMPO DE TÍTULO AUTO-RESPONSIVO (SE ADAPTA AO NÚMERO DE LINHAS SEM ALTURA MÍNIMA FIXA) */}
-                    <textarea 
-                      rows={1}
-                      className="font-bold text-gray-800 w-full outline-none bg-transparent hover:bg-gray-50 p-1 -ml-1 rounded resize-none overflow-hidden text-sm leading-snug" 
-                      value={task.title} 
-                      ref={(node) => {
-                        if (node) {
-                          node.style.height = 'auto';
-                          node.style.height = `${node.scrollHeight}px`;
-                        }
-                      }}
-                      onChange={(e) => {
-                        e.target.style.height = 'auto';
-                        e.target.style.height = `${e.target.scrollHeight}px`;
-                        updateTask(task.id, { title: e.target.value });
-                      }} 
-                      onMouseDown={(e) => e.stopPropagation()} 
-                    />
-
-                    <div className="pt-2 border-t border-gray-100 flex justify-between items-end mt-2">
+                    <div className="font-bold text-gray-900 text-sm leading-snug mb-3">
+                      {task.title}
+                    </div>
+                    <div className="pt-2 border-t border-gray-100 flex justify-between items-end">
                       <span className="text-xs font-semibold text-gray-400 truncate max-w-[120px]">{activeProject?.name}</span>
                       <div className="text-[10px] text-gray-400 text-right font-medium leading-tight">
                         <div>Criado: {task.createdAt}</div>
                         {task.lastMovedAt && <div>Movido: {task.lastMovedAt}</div>}
                       </div>
                     </div>
-
                   </div>
                 ))}
               </div>
-              <button onClick={() => addTask(col)} className="mt-4 p-2 text-gray-500 hover:bg-gray-300 rounded font-bold transition-colors">+ Nova Tarefa</button>
+              <button onClick={() => addTask(col)} className="mt-4 p-2 text-gray-500 hover:bg-gray-300 rounded font-bold transition-colors text-sm">+ Nova Tarefa</button>
             </div>
           ))}
         </div>
 
-        {/* GAVETA LATERAL KANBAN */}
+        {/* GAVETA LATERAL KANBAN (IMAGEM 2) */}
         {taskDrawer.isOpen && (
-          <div className="absolute top-0 right-0 w-full md:w-96 h-full bg-white shadow-2xl md:border-l p-6 z-50 overflow-y-auto">
+          <div className="absolute top-0 right-0 w-full md:w-[420px] h-full bg-white shadow-2xl md:border-l p-6 z-50 overflow-y-auto">
             {(() => {
               const task = tasks.find(t => t.id === taskDrawer.taskId);
               if (!task) return null;
               return (
-                <div className="flex flex-col h-full space-y-6">
+                <div className="flex flex-col h-full space-y-5">
                   <div className="flex justify-between items-center pb-4 border-b">
-                    <h2 className="text-xl font-bold">Detalhes da Tarefa</h2>
-                    <button onClick={() => setTaskDrawer({ isOpen: false, taskId: null })} className="text-gray-400 font-bold hover:text-red-500 text-xl">X</button>
+                    <h2 className="text-lg font-bold text-[#2A3143]">Detalhes da Tarefa</h2>
+                    <button onClick={() => setTaskDrawer({ isOpen: false, taskId: null })} className="text-gray-400 hover:text-gray-800 text-xl font-light">✕</button>
                   </div>
                   
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Título</label>
-                    <input className="w-full p-2 border rounded font-medium" value={task.title} onChange={e => updateTask(task.id, { title: e.target.value })} />
+                    <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Título</label>
+                    <input className="w-full p-2.5 border border-gray-200 rounded text-gray-800 text-sm focus:outline-none focus:border-gray-400" value={task.title} onChange={e => updateTask(task.id, { title: e.target.value })} />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Links</label>
-                    <div className="space-y-2 mb-2">
-                      {task.links?.map((link, i) => (
-                        <div key={i} className="flex gap-2 items-center bg-gray-50 p-2 rounded border">
-                          <a href={link.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex-1 text-sm font-bold truncate">{link.name}</a>
-                          <button onClick={() => updateTask(task.id, { links: task.links.filter((_, idx) => idx !== i) })} className="text-gray-400 hover:text-red-500 text-xs font-bold uppercase">Excluir</button>
-                        </div>
-                      ))}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Prioridade</label>
+                      <select className="w-full p-2.5 border border-gray-200 rounded text-gray-800 text-sm focus:outline-none bg-white appearance-none" value={task.priority} onChange={e => updateTask(task.id, { priority: e.target.value })}>
+                        <option value="baixa">Baixa</option>
+                        <option value="media">Média</option>
+                        <option value="alta">Alta</option>
+                        <option value="urgente">Urgente</option>
+                      </select>
                     </div>
-                    <button onClick={() => { const name = prompt('Nome do link:'); const url = prompt('URL:'); if (name && url) updateTask(task.id, { links: [...(task.links||[]), {name, url}] }); }} className="text-sm font-bold text-orange-600 hover:text-orange-700">+ Adicionar Link</button>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Subgrupo</label>
+                      <input className="w-full p-2.5 border border-gray-200 rounded text-gray-800 text-sm focus:outline-none" value={task.subgroup || ''} onChange={e => updateTask(task.id, { subgroup: e.target.value })} />
+                    </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Etapas Internas</label>
+                    <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Descrição & Links</label>
+                    <textarea className="w-full p-2.5 border border-gray-200 rounded text-gray-800 text-sm focus:outline-none min-h-[120px] resize-y" placeholder="Detalhes..." value={task.description || ''} onChange={e => updateTask(task.id, { description: e.target.value })} />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Etapas / Sub-tarefas</label>
                     <div className="space-y-2 mb-2">
                       {task.subtasks?.map((sub, i) => (
-                        <div key={i} className="flex items-center gap-2 p-2 bg-gray-50 rounded border flex-wrap">
-                          <input type="checkbox" checked={sub.completed} className="w-4 h-4 accent-orange-600" onChange={(e) => { const newSubtasks = [...task.subtasks]; newSubtasks[i] = { ...sub, completed: e.target.checked, completedAt: e.target.checked ? getShortDate() : null }; updateTask(task.id, { subtasks: newSubtasks }); }} />
-                          <input className={`flex-1 min-w-0 bg-transparent border-none outline-none text-sm font-bold ${sub.completed ? 'line-through text-gray-400' : 'text-gray-700'}`} value={sub.title} onChange={(e) => { const newSubtasks = [...task.subtasks]; newSubtasks[i].title = e.target.value; updateTask(task.id, { subtasks: newSubtasks }); }} />
-                          <button onClick={() => updateTask(task.id, { subtasks: task.subtasks.filter((_, idx) => idx !== i) })} className="text-gray-400 hover:text-red-500 font-bold pl-1">X</button>
-                          {sub.completed && sub.completedAt && <div className="w-full mt-1 text-[10px] text-green-600 font-bold whitespace-nowrap bg-green-50 px-1 py-0.5 rounded border border-green-200">Concluído: {sub.completedAt}</div>}
+                        <div key={i} className="flex items-center gap-2">
+                          <input type="checkbox" checked={sub.completed} className="w-4 h-4 accent-gray-600 cursor-pointer" onChange={(e) => { const newSubtasks = [...task.subtasks]; newSubtasks[i] = { ...sub, completed: e.target.checked, completedAt: e.target.checked ? getShortDate() : null }; updateTask(task.id, { subtasks: newSubtasks }); }} />
+                          <input className={`flex-1 min-w-0 bg-transparent border-b border-transparent focus:border-gray-300 outline-none text-sm ${sub.completed ? 'line-through text-gray-400' : 'text-gray-700'}`} value={sub.title} onChange={(e) => { const newSubtasks = [...task.subtasks]; newSubtasks[i].title = e.target.value; updateTask(task.id, { subtasks: newSubtasks }); }} />
+                          <button onClick={() => updateTask(task.id, { subtasks: task.subtasks.filter((_, idx) => idx !== i) })} className="text-gray-300 hover:text-red-500 font-bold px-1">✕</button>
                         </div>
                       ))}
                     </div>
-                    <button onClick={() => updateTask(task.id, { subtasks: [...(task.subtasks||[]), { title: 'Nova Etapa', completed: false }] })} className="text-sm font-bold text-orange-600 hover:text-orange-700">+ Adicionar Etapa</button>
+                    <div className="flex gap-2">
+                      <input className="flex-1 p-2 border border-gray-200 rounded text-sm focus:outline-none" placeholder="Nova etapa..." value={draftSubtask} onChange={e => setDraftSubtask(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleAddSubtask(task.id) }} />
+                      <button onClick={() => handleAddSubtask(task.id)} className="bg-[#E5E7EB] hover:bg-gray-300 px-3 rounded font-bold text-gray-600">+</button>
+                    </div>
                   </div>
 
-                  <div className="mt-auto pt-4 border-t pb-4 md:pb-0">
-                    <button onClick={() => { setTasks(tasks.filter(t => t.id !== task.id)); setTaskDrawer({ isOpen: false, taskId: null }); }} className="w-full p-3 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Links Anexados</label>
+                    <div className="space-y-2 mb-2">
+                      {task.links?.map((link, i) => (
+                        <div key={i} className="flex items-center gap-2 text-sm">
+                          <a href={link.url} target="_blank" rel="noreferrer" className="text-blue-600 hover:underline flex-1 truncate font-medium">{link.name}</a>
+                          <button onClick={() => updateTask(task.id, { links: task.links.filter((_, idx) => idx !== i) })} className="text-gray-300 hover:text-red-500 font-bold px-1">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input className="w-1/3 p-2 border border-gray-200 rounded text-sm focus:outline-none" placeholder="Nome (Ex: Docs)" value={draftLinkName} onChange={e => setDraftLinkName(e.target.value)} />
+                      <input className="flex-1 p-2 border border-gray-200 rounded text-sm focus:outline-none" placeholder="https://..." value={draftLinkUrl} onChange={e => setDraftLinkUrl(e.target.value)} onKeyDown={e => { if(e.key === 'Enter') handleAddLink(task.id) }} />
+                      <button onClick={() => handleAddLink(task.id)} className="bg-[#E5E7EB] hover:bg-gray-300 px-3 rounded font-bold text-gray-600">+</button>
+                    </div>
+                  </div>
+
+                  <div className="mt-auto pt-4 border-t">
+                    <button onClick={() => { setTasks(tasks.filter(t => t.id !== task.id)); setTaskDrawer({ isOpen: false, taskId: null }); }} className="text-xs text-red-500 font-bold hover:underline">
                       Excluir Tarefa
                     </button>
                   </div>
@@ -340,6 +362,7 @@ export default function App() {
 
   const renderGantt = () => {
     const days = Array.from({ length: 120 }, (_, i) => i + 1);
+    
     const drawConnections = () => dependencies.map(dep => {
       const fromStep = ganttSteps.find(s => s.id === dep.from);
       const toStep = ganttSteps.find(s => s.id === dep.to);
@@ -348,7 +371,8 @@ export default function App() {
       const startY = (fromStep.row * 60) + 70 + 20;
       const endX = (toStep.start - 1) * 40;
       const endY = (toStep.row * 60) + 70 + 20;
-      const pathData = `M ${startX} ${startY} C ${startX + 30} ${startY}, ${endX - 30} ${endY}, ${endX} ${endY}`;
+      // Curva em S idêntica à Imagem 4
+      const pathData = `M ${startX} ${startY} C ${startX + 15} ${startY}, ${endX - 15} ${endY}, ${endX} ${endY}`;
       return (
         <g key={dep.id}>
           <path d={pathData} fill="none" stroke="transparent" strokeWidth="15" className="cursor-pointer" onClick={() => deleteDependency(dep.id)} />
@@ -359,19 +383,45 @@ export default function App() {
 
     return (
       <div className="flex-1 flex flex-col bg-white overflow-hidden relative">
+        {/* CABEÇALHO DO GANTT (IMAGEM 4) */}
+        <div className="flex justify-between items-center p-4 md:px-8 border-b bg-gray-50 z-30">
+           <h2 className="text-xl md:text-2xl font-bold text-[#1A202C]">Cronograma / Gantt</h2>
+           <div className="flex gap-2">
+             <button onClick={() => { const day = parseInt(prompt('Dia do Milestone (1-120):')); const title = prompt('Título:'); if(day && title) setMilestones([...milestones, {id: Date.now(), title, day}]); }} className="bg-[#FBBF24] hover:bg-[#F59E0B] text-black px-3 md:px-4 py-2 font-bold text-sm rounded shadow-sm flex items-center gap-1 transition-colors">
+               <span className="text-lg leading-none">⚑</span> Novo Milestone
+             </button>
+             <button onClick={() => setGanttSteps([...ganttSteps, {id: Date.now(), title: 'Nova Etapa', start: 1, end: 5, color: '#374151', row: ganttSteps.length}])} className="bg-[#374151] hover:bg-gray-900 text-white px-3 md:px-4 py-2 font-bold text-sm rounded shadow-sm transition-colors">
+               + Nova Etapa
+             </button>
+           </div>
+        </div>
+
         <div className="flex-1 overflow-auto relative select-none" ref={ganttRef}>
           <div className="w-[4800px] relative h-full min-h-[800px]">
-            <div className="flex border-b sticky top-0 bg-white z-20">
-              {days.map(d => <div key={d} className="w-[40px] flex-shrink-0 text-center text-xs text-gray-500 py-2 border-r bg-gray-50">{d}</div>)}
+            <div className="flex border-b sticky top-0 bg-white z-20 shadow-sm">
+              {days.map(d => <div key={d} className="w-[40px] flex-shrink-0 text-center text-[10px] text-gray-500 py-2 border-r bg-[#F9FAFB]">{d}</div>)}
             </div>
+            
             <div className="absolute top-10 left-0 w-full h-[calc(100%-40px)] flex pointer-events-none opacity-20">
               {days.map(d => <div key={d} className="w-[40px] flex-shrink-0 border-r border-gray-300"></div>)}
             </div>
+            
+            {/* RENDERIZAÇÃO DOS MILESTONES */}
+            {milestones.map(m => (
+              <div key={m.id} className="absolute top-0 h-full border-l-2 border-[#FBBF24] z-10 pointer-events-none" style={{ left: `${(m.day - 1) * 40}px` }}>
+                <div className="absolute top-[42px] -left-[14px] bg-[#FBBF24] text-black text-[10px] font-bold px-1 py-0.5 rounded shadow pointer-events-auto cursor-pointer hover:scale-110 transition-transform" onDoubleClick={() => { if(confirm('Excluir este milestone?')) setMilestones(milestones.filter(x => x.id !== m.id)); }}>
+                  ⚑
+                </div>
+              </div>
+            ))}
+
             <svg className="absolute top-0 left-0 w-full h-full pointer-events-auto z-10">{drawConnections()}</svg>
+            
             {ganttSteps.map(step => (
               <div 
-                key={step.id} className="absolute h-10 rounded shadow-md flex items-center px-3 text-white font-bold text-sm cursor-grab group z-20"
+                key={step.id} className="absolute h-10 rounded shadow-md flex items-center px-4 text-white font-bold text-sm cursor-grab group z-20 hover:brightness-110 transition-[filter]"
                 style={{ left: `${(step.start - 1) * 40}px`, width: `${(step.end - step.start + 1) * 40}px`, top: `${step.row * 60 + 50}px`, backgroundColor: step.color }}
+                onDoubleClick={() => setGanttDrawer({ isOpen: true, stepId: step.id })}
                 onMouseDown={(e) => {
                   if (e.target.tagName === 'INPUT') return;
                   const startX = e.clientX;
@@ -380,11 +430,60 @@ export default function App() {
                   document.addEventListener('mousemove', handleMouseMove); document.addEventListener('mouseup', handleMouseUp);
                 }}
               >
-                <input className="bg-transparent border-none text-white outline-none w-full font-bold cursor-text" value={step.title} onChange={(e) => { const newSteps = [...ganttSteps]; newSteps.find(s => s.id === step.id).title = e.target.value; setGanttSteps(newSteps); }} />
+                <span className="truncate pointer-events-none">{step.title}</span>
               </div>
             ))}
           </div>
         </div>
+
+        {/* GAVETA DE CONFIGURAÇÃO DE ETAPAS GANTT */}
+        {ganttDrawer.isOpen && (
+          <div className="absolute top-0 right-0 w-full md:w-80 h-full bg-white shadow-2xl md:border-l p-6 z-50">
+             {(() => {
+               const step = ganttSteps.find(s => s.id === ganttDrawer.stepId);
+               if (!step) return null;
+               return (
+                 <div className="flex flex-col h-full space-y-4">
+                    <div className="flex justify-between items-center pb-4 border-b">
+                      <h2 className="text-lg font-bold text-gray-800">Configurar Etapa</h2>
+                      <button onClick={() => setGanttDrawer({ isOpen: false, stepId: null })} className="text-gray-400 hover:text-gray-800 text-xl font-light">✕</button>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Título</label>
+                      <input className="w-full p-2 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none focus:border-gray-400" value={step.title} onChange={e => updateGanttStep(step.id, { title: e.target.value })} />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Início (Dia)</label>
+                        <input type="number" className="w-full p-2 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none" value={step.start} onChange={e => updateGanttStep(step.id, { start: parseInt(e.target.value) || 1 })} />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Fim (Dia)</label>
+                        <input type="number" className="w-full p-2 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none" value={step.end} onChange={e => updateGanttStep(step.id, { end: parseInt(e.target.value) || 1 })} />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Linha Horizontal (Row)</label>
+                      <input type="number" className="w-full p-2 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none" value={step.row} onChange={e => updateGanttStep(step.id, { row: parseInt(e.target.value) || 0 })} />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-gray-500 mb-2 uppercase">Cor</label>
+                      <div className="flex flex-wrap gap-2">
+                        {PROJECT_COLORS.map(c => (
+                          <button key={c} onClick={() => updateGanttStep(step.id, { color: c })} className={`w-6 h-6 rounded-full shadow-sm border-2 ${step.color === c ? 'border-gray-900 scale-125' : 'border-transparent hover:scale-110'} transition-transform`} style={{ backgroundColor: c }} />
+                        ))}
+                      </div>
+                    </div>
+                    <div className="mt-auto pt-4 border-t">
+                      <button onClick={() => { setGanttSteps(ganttSteps.filter(s => s.id !== step.id)); setGanttDrawer({ isOpen: false, stepId: null }); }} className="text-xs text-red-500 font-bold hover:underline">
+                        Excluir Etapa
+                      </button>
+                    </div>
+                 </div>
+               );
+             })()}
+          </div>
+        )}
       </div>
     );
   };
@@ -398,7 +497,7 @@ export default function App() {
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
             <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Novembro 2026</h1>
-            <button onClick={() => setEventDrawer({ isOpen: true, event: { id: Date.now(), title: 'Novo Evento', date: '2026-11-10', type: 'marco', color: '#3a71ba' }})} className="w-full md:w-auto bg-gray-900 text-white px-4 py-3 md:py-2 rounded font-bold hover:bg-gray-800">
+            <button onClick={() => setEventDrawer({ isOpen: true, event: { id: Date.now(), title: 'Novo Evento', date: '2026-11-10', type: 'Evento Normal', description: '', color: '#3a71ba' }})} className="w-full md:w-auto bg-[#1A1C23] text-white px-4 py-3 md:py-2 rounded font-bold hover:bg-gray-800">
               + Adicionar Evento
             </button>
           </div>
@@ -413,11 +512,11 @@ export default function App() {
               const isToday = day === 4; 
               
               return (
-                <div key={day} className={`min-h-[80px] md:min-h-[120px] bg-white border p-1 md:p-2 rounded-lg md:rounded-xl flex flex-col shadow-sm transition-all hover:shadow-md ${isToday ? 'border-orange-500 ring-2 ring-orange-200' : 'border-gray-100'}`}>
+                <div key={day} className={`min-h-[80px] md:min-h-[120px] bg-white border p-1 md:p-2 rounded flex flex-col shadow-sm transition-all hover:shadow-md ${isToday ? 'border-[#FF6B00] ring-1 ring-[#FF6B00]' : 'border-gray-200'}`}>
                   <div 
-                    onClick={() => setEventDrawer({ isOpen: true, event: { id: Date.now(), title: 'Novo Evento', date: dateStr, type: 'marco', color: '#3a71ba' }})}
-                    className="cursor-pointer text-right text-xs md:text-sm font-bold mb-1 md:mb-2 p-1 rounded hover:bg-gray-100"
-                    style={dayEvents.length > 0 ? { color: dayEvents[0].color } : { color: isToday ? '#ea580c' : '#9ca3af' }}
+                    onClick={() => setEventDrawer({ isOpen: true, event: { id: Date.now(), title: 'Novo Evento', date: dateStr, type: 'Evento Normal', description: '', color: '#3a71ba' }})}
+                    className="cursor-pointer text-right text-xs md:text-sm font-bold mb-1 md:mb-2 p-1 rounded hover:bg-gray-50"
+                    style={dayEvents.length > 0 ? { color: dayEvents[0].color } : { color: isToday ? '#FF6B00' : '#9ca3af' }}
                   >
                     NOV {day}
                   </div>
@@ -436,22 +535,22 @@ export default function App() {
 
         <div className="w-full md:w-80 bg-white border-t md:border-t-0 md:border-l shadow-xl flex flex-col h-1/3 md:h-full shrink-0">
           <div className="p-4 md:p-6 border-b">
-            <h2 className="text-lg md:text-xl font-bold">Próximos Eventos</h2>
+            <h2 className="text-lg md:text-xl font-bold text-[#1A202C]">Próximos Eventos</h2>
           </div>
           <div className="flex-1 p-4 md:p-6 space-y-4 overflow-y-auto">
             {sortedEvents.map(e => {
               const diffDays = Math.ceil((new Date(e.date) - currentDate) / (1000 * 60 * 60 * 24));
               let statusText = diffDays < 0 ? 'Passou' : diffDays === 0 ? 'Hoje' : diffDays === 1 ? 'Amanhã' : `Faltam ${diffDays} dias`;
               return (
-                <div key={e.id} className="p-3 md:p-4 rounded-xl border flex items-center gap-3 md:gap-4 hover:shadow-md transition-shadow cursor-pointer" onClick={() => setEventDrawer({ isOpen: true, event: { ...e }})}>
-                  <div className="flex flex-col items-center justify-center w-12 h-12 md:w-14 md:h-14 rounded-lg bg-gray-50 border-2" style={{ borderColor: e.color }}>
+                <div key={e.id} className="p-3 rounded-lg border border-gray-100 flex items-center gap-3 md:gap-4 hover:shadow-md hover:border-gray-200 transition-all cursor-pointer" onClick={() => setEventDrawer({ isOpen: true, event: { ...e }})}>
+                  <div className="flex flex-col items-center justify-center w-12 h-12 md:w-14 md:h-14 rounded-md bg-gray-50 border-l-4 shadow-sm" style={{ borderLeftColor: e.color }}>
                     <span className="text-[10px] font-bold text-gray-500 uppercase leading-none">Nov</span>
                     <span className="text-base md:text-lg font-black leading-none" style={{ color: e.color }}>{e.date.split('-')[2]}</span>
                   </div>
                   <div className="min-w-0">
-                    <h3 className="font-bold text-sm md:text-base text-gray-900 leading-tight truncate">{e.title}</h3>
+                    <h3 className="font-bold text-sm md:text-sm text-gray-800 leading-tight truncate">{e.title}</h3>
                     <div className="flex gap-2 text-[10px] md:text-xs mt-1">
-                      <span className={`font-bold ${diffDays < 0 ? 'text-gray-400' : 'text-orange-500'}`}>{statusText}</span>
+                      <span className={`font-bold ${diffDays < 0 ? 'text-gray-400' : 'text-[#FF6B00]'}`}>{statusText}</span>
                     </div>
                   </div>
                 </div>
@@ -460,36 +559,54 @@ export default function App() {
           </div>
         </div>
 
-        {/* GAVETA LATERAL EVENTO */}
+        {/* GAVETA LATERAL DO EVENTO (IMAGEM 5) */}
         {eventDrawer.isOpen && (
-          <div className="absolute top-0 right-0 w-full md:w-80 h-full bg-white shadow-2xl md:border-l p-6 z-50">
-             <div className="flex flex-col h-full space-y-6">
+          <div className="absolute top-0 right-0 w-full md:w-[380px] h-full bg-white shadow-2xl md:border-l p-6 z-50">
+             <div className="flex flex-col h-full space-y-5">
                 <div className="flex justify-between items-center pb-4 border-b">
-                  <h2 className="text-xl font-bold">{events.find(e => e.id === eventDrawer.event.id) ? 'Editar Evento' : 'Novo Evento'}</h2>
-                  <button onClick={() => setEventDrawer({ isOpen: false, event: null })} className="text-gray-400 hover:text-red-500 font-bold text-xl">X</button>
+                  <h2 className="text-lg font-bold text-[#2A3143]">Detalhes do Evento</h2>
+                  <button onClick={() => setEventDrawer({ isOpen: false, event: null })} className="text-gray-400 hover:text-gray-800 text-xl font-light">✕</button>
                 </div>
+                
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Título</label>
-                  <input className="w-full p-2 border rounded font-medium" value={eventDrawer.event.title} onChange={e => setEventDrawer({ ...eventDrawer, event: { ...eventDrawer.event, title: e.target.value }})} />
+                  <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Título do Evento</label>
+                  <input className="w-full p-2.5 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none focus:border-gray-400" value={eventDrawer.event.title} onChange={e => setEventDrawer({ ...eventDrawer, event: { ...eventDrawer.event, title: e.target.value }})} />
                 </div>
+                
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">Data</label>
-                  <input type="date" className="w-full p-2 border rounded font-medium" value={eventDrawer.event.date} onChange={e => setEventDrawer({ ...eventDrawer, event: { ...eventDrawer.event, date: e.target.value }})} />
+                  <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Data</label>
+                  <input type="date" className="w-full p-2.5 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none" value={eventDrawer.event.date} onChange={e => setEventDrawer({ ...eventDrawer, event: { ...eventDrawer.event, date: e.target.value }})} />
                 </div>
+                
                 <div>
-                  <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">Cor do Evento</label>
+                  <label className="block text-[11px] font-bold text-gray-500 mb-2 uppercase">Cor do Evento</label>
                   <div className="flex flex-wrap gap-2">
                     {PROJECT_COLORS.map(c => (
-                      <button key={c} onClick={() => setEventDrawer({ ...eventDrawer, event: { ...eventDrawer.event, color: c }})} className={`w-8 h-8 rounded-full shadow-sm border-2 ${eventDrawer.event.color === c ? 'border-gray-900 scale-110' : 'border-transparent hover:scale-110'}`} style={{ backgroundColor: c }} />
+                      <button key={c} onClick={() => setEventDrawer({ ...eventDrawer, event: { ...eventDrawer.event, color: c }})} className={`w-7 h-7 rounded-full shadow-sm border-2 ${eventDrawer.event.color === c ? 'border-gray-900 scale-125' : 'border-transparent hover:scale-110'} transition-transform`} style={{ backgroundColor: c }} />
                     ))}
                   </div>
                 </div>
-                <div className="mt-auto pt-4 border-t flex flex-col gap-2 pb-4 md:pb-0">
-                  <button onClick={() => { setEvents(events.find(e => e.id === eventDrawer.event.id) ? events.map(e => e.id === eventDrawer.event.id ? eventDrawer.event : e) : [...events, eventDrawer.event]); setEventDrawer({ isOpen: false, event: null }); }} className="w-full p-3 bg-gray-900 hover:bg-gray-800 text-white font-bold rounded">
+
+                <div>
+                   <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Tipo</label>
+                   <select className="w-full p-2.5 border border-gray-200 rounded text-sm text-gray-800 bg-white focus:outline-none" value={eventDrawer.event.type || 'Evento Normal'} onChange={e => setEventDrawer({...eventDrawer, event: {...eventDrawer.event, type: e.target.value}})}>
+                     <option value="Evento Normal">Evento Normal</option>
+                     <option value="Feriado">Feriado</option>
+                     <option value="Marco">Marco / Reunião</option>
+                   </select>
+                </div>
+
+                <div>
+                   <label className="block text-[11px] font-bold text-gray-500 mb-1 uppercase">Descrição</label>
+                   <textarea className="w-full p-2.5 border border-gray-200 rounded text-sm text-gray-800 focus:outline-none min-h-[120px] resize-y" placeholder="Alinhamento com capitão..." value={eventDrawer.event.description || ''} onChange={e => setEventDrawer({...eventDrawer, event: {...eventDrawer.event, description: e.target.value}})} />
+                </div>
+
+                <div className="mt-auto pt-4 border-t flex gap-2">
+                  <button onClick={() => { setEvents(events.find(e => e.id === eventDrawer.event.id) ? events.map(e => e.id === eventDrawer.event.id ? eventDrawer.event : e) : [...events, eventDrawer.event]); setEventDrawer({ isOpen: false, event: null }); }} className="flex-1 p-3 bg-gray-900 hover:bg-gray-800 text-white font-bold text-sm rounded shadow-sm transition-colors">
                     Salvar
                   </button>
                   {events.find(e => e.id === eventDrawer.event.id) && (
-                    <button onClick={() => { setEvents(events.filter(e => e.id !== eventDrawer.event.id)); setEventDrawer({ isOpen: false, event: null }); }} className="w-full p-3 bg-red-50 hover:bg-red-100 text-red-600 font-bold rounded">
+                    <button onClick={() => { setEvents(events.filter(e => e.id !== eventDrawer.event.id)); setEventDrawer({ isOpen: false, event: null }); }} className="flex-1 p-3 bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm rounded transition-colors">
                       Excluir
                     </button>
                   )}
@@ -502,7 +619,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col-reverse md:flex-row h-[100dvh] font-sans bg-gray-100 overflow-hidden text-gray-800 selection:bg-orange-200">
+    <div className="flex flex-col-reverse md:flex-row h-[100dvh] font-sans bg-gray-100 overflow-hidden text-gray-800 selection:bg-[#FF6B00] selection:text-white">
       {renderSidebar()}
       <div className="flex-1 flex overflow-hidden">
         {activeTab === 'kanban' && renderKanban()}
