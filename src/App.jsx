@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { doc, setDoc, onSnapshot } from "firebase/firestore";
+import { db } from './firebase'; // Importação do arquivo de configuração criado no Passo 3
 
 // --- CONSTANTES & DADOS INICIAIS ---
-const STORAGE_KEY = 'guepardo_task_state_v2';
-
 const PROJECT_COLORS = [
   '#FBBF24', '#F97316', '#4B5563', '#000000', '#eb4034', '#53ba3a', 
   '#3aba9a', '#3a71ba', '#a93aba', '#d46e2a', '#d42a2a', '#db586e'
@@ -32,26 +32,13 @@ const INITIAL_EVENTS = [
 export default function App() {
   const [activeTab, setActiveTab] = useState('kanban');
 
-  // Inicialização com Carregamento Automático do localStorage
-  const loadInitialState = (key, fallback) => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (parsed[key]) return parsed[key];
-      }
-    } catch (e) {
-      console.error(`Erro ao carregar ${key} do localStorage:`, e);
-    }
-    return fallback;
-  };
-
-  const [projects, setProjects] = useState(() => loadInitialState('projects', INITIAL_PROJECTS));
-  const [tasks, setTasks] = useState(() => loadInitialState('tasks', INITIAL_TASKS));
-  const [ganttSteps, setGanttSteps] = useState(() => loadInitialState('ganttSteps', INITIAL_GANTT));
-  const [dependencies, setDependencies] = useState(() => loadInitialState('dependencies', [{ id: 1, from: 1, to: 2 }]));
-  const [events, setEvents] = useState(() => loadInitialState('events', INITIAL_EVENTS));
-  const [milestones, setMilestones] = useState(() => loadInitialState('milestones', [{ id: 1, title: 'Design Freeze', day: 15, color: '#FBBF24' }]));
+  // Inicialização padrão (será sobrescrita pelo Firebase assim que conectar)
+  const [projects, setProjects] = useState(INITIAL_PROJECTS);
+  const [tasks, setTasks] = useState(INITIAL_TASKS);
+  const [ganttSteps, setGanttSteps] = useState(INITIAL_GANTT);
+  const [dependencies, setDependencies] = useState([{ id: 1, from: 1, to: 2 }]);
+  const [events, setEvents] = useState(INITIAL_EVENTS);
+  const [milestones, setMilestones] = useState([{ id: 1, title: 'Design Freeze', day: 15, color: '#FBBF24' }]);
 
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || 1);
   const [currentDate] = useState(new Date(2026, 10, 4));
@@ -62,17 +49,62 @@ export default function App() {
   const [projectDrawer, setProjectDrawer] = useState({ isOpen: false, projectId: null });
   const [editingGanttTitleId, setEditingGanttTitleId] = useState(null);
 
-  // Estados temporários para inputs
   const [draftSubtask, setDraftSubtask] = useState('');
   const [draftLinkName, setDraftLinkName] = useState('');
   const [draftLinkUrl, setDraftLinkUrl] = useState('');
 
-  // Persistência Automática
+  // --- FIREBASE: SINCRONIZAÇÃO EM TEMPO REAL ---
+  const docRef = doc(db, "guepardo_data", "main_state");
+  const isNetworkUpdate = useRef(false); // Flag para evitar loop infinito
+
+  // Listener para carregar dados da nuvem
   useEffect(() => {
-    const payload = { projects, tasks, ganttSteps, dependencies, events, milestones };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    const unsubscribe = onSnapshot(docRef, (docSnap) => {
+      if (docSnap.exists()) {
+        isNetworkUpdate.current = true; // Avisa o app que os dados vieram da nuvem
+        const data = docSnap.data();
+        
+        if (data.projects) setProjects(data.projects);
+        if (data.tasks) setTasks(data.tasks);
+        if (data.ganttSteps) setGanttSteps(data.ganttSteps);
+        if (data.dependencies) setDependencies(data.dependencies);
+        if (data.events) setEvents(data.events);
+        if (data.milestones) setMilestones(data.milestones);
+
+        // Reseta a flag rapidamente após a atualização dos estados
+        setTimeout(() => { isNetworkUpdate.current = false; }, 100);
+      } else {
+        // Se a base de dados estiver vazia (1º uso), cria o documento inicial
+        setDoc(docRef, {
+          projects: INITIAL_PROJECTS,
+          tasks: INITIAL_TASKS,
+          ganttSteps: INITIAL_GANTT,
+          dependencies: [{ id: 1, from: 1, to: 2 }],
+          events: INITIAL_EVENTS,
+          milestones: [{ id: 1, title: 'Design Freeze', day: 15, color: '#FBBF24' }]
+        });
+      }
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Função para gravar dados
+  const saveDataToCloud = (newPayload) => {
+    setDoc(docRef, newPayload, { merge: true }).catch((error) => {
+      console.error("Erro ao salvar no Firebase:", error);
+    });
+  };
+
+  // Listener para salvar alterações sempre que um estado for modificado localmente
+  useEffect(() => {
+    if (isNetworkUpdate.current) return; // Ignora se a mudança veio do Firebase (evita loop)
+    
+    saveDataToCloud({ projects, tasks, ganttSteps, dependencies, events, milestones });
   }, [projects, tasks, ganttSteps, dependencies, events, milestones]);
 
+
+  // --- BACKUP MANUAL (Opcional, mas útil caso queira fazer o download do Firebase) ---
   const handleExportBackup = () => {
     const payload = { projects, tasks, ganttSteps, dependencies, events, milestones };
     const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(payload, null, 2));
@@ -141,13 +173,10 @@ export default function App() {
   };
 
   const addProject = () => {
-    const name = prompt('Nome do novo projeto:');
-    if (name) {
-      const color = PROJECT_COLORS[projects.length % PROJECT_COLORS.length];
-      const newId = Date.now();
-      setProjects([...projects, { id: newId, name, color }]);
-      setSelectedProjectId(newId);
-    }
+    // Nova lógica de criação padrão de projeto (sem prompt)
+    const newId = Date.now();
+    setProjects([...projects, { id: newId, name: 'Projeto', color: '#FBBF24' }]);
+    setSelectedProjectId(newId);
   };
 
   // --- GANTT LOGIC ---
@@ -285,10 +314,11 @@ export default function App() {
           {projects.map(p => (
             <div 
               key={p.id} 
+              onClick={() => setSelectedProjectId(p.id)} 
               className={`group relative p-3 pb-2 rounded-t-lg cursor-pointer min-w-[150px] font-bold text-white transition-all flex justify-between items-center ${p.id === selectedProjectId ? 'border-b-0 z-20 shadow-md ring-2 ring-offset-2 ring-gray-400' : 'opacity-70 hover:opacity-100'}`}
               style={{ backgroundColor: p.color }}
             >
-              <span onClick={() => setSelectedProjectId(p.id)} className="flex-1 text-sm truncate">{p.name}</span>
+              <span className="flex-1 text-sm truncate">{p.name}</span>
               <button onClick={(e) => { e.stopPropagation(); setProjectDrawer({ isOpen: true, projectId: p.id }); }} className="opacity-0 group-hover:opacity-100 text-white bg-black/20 hover:bg-black/40 rounded px-2 py-0.5 ml-2 text-xs transition-opacity">✎</button>
             </div>
           ))}
@@ -305,7 +335,16 @@ export default function App() {
                 {projectTasks.filter(t => t.column === col).map(task => (
                   <div key={task.id} draggable onDragStart={(e) => handleDragStart(e, task.id)} onClick={() => setTaskDrawer({ isOpen: true, taskId: task.id })} className="bg-white p-4 rounded shadow-sm border border-gray-100 cursor-grab hover:shadow-md transition-shadow group relative flex flex-col justify-between">
                     <div className="flex justify-between items-start gap-2 mb-2">
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase ${task.priority === 'urgente' ? 'bg-red-100 text-red-700' : task.priority === 'alta' ? 'bg-orange-100 text-orange-700' : task.priority === 'media' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}>
+                      <span 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const prioridades = ['baixa', 'media', 'alta', 'urgente'];
+                          const indexAtual = prioridades.indexOf(task.priority || 'media');
+                          const proximaPrioridade = prioridades[(indexAtual + 1) % prioridades.length];
+                          updateTask(task.id, { priority: proximaPrioridade });
+                        }}
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase cursor-pointer hover:brightness-95 transition-all ${task.priority === 'urgente' ? 'bg-red-100 text-red-700' : task.priority === 'alta' ? 'bg-orange-100 text-orange-700' : task.priority === 'media' ? 'bg-yellow-100 text-yellow-700' : 'bg-green-100 text-green-700'}`}
+                      >
                         {task.priority}
                       </span>
                     </div>
@@ -313,7 +352,7 @@ export default function App() {
                       {task.title}
                     </div>
                     <div className="pt-2 border-t border-gray-100 flex justify-between items-end">
-                      <span className="text-xs font-semibold text-gray-400 truncate max-w-[120px]">{activeProject?.name}</span>
+                      <span className="text-xs font-semibold text-gray-400 truncate max-w-[120px]">{task.subgroup}</span>
                       <div className="text-[10px] text-gray-400 text-right font-medium leading-tight">
                         <div>Criado: {task.createdAt}</div>
                         {task.lastMovedAt && <div>Movido: {task.lastMovedAt}</div>}
@@ -499,7 +538,7 @@ export default function App() {
               {days.map(d => <div key={d} className="w-[40px] flex-shrink-0 border-r border-gray-300"></div>)}
             </div>
             
-            {/* MILESTONES CORRIGIDOS COM POINTER-EVENTS ATIVO */}
+            {/* MILESTONES */}
             {milestones.map(m => (
               <div key={m.id} className="absolute top-0 h-full w-0.5 z-20" style={{ left: `${(m.day - 1) * 40 + 20}px`, backgroundColor: m.color || '#FBBF24' }}>
                 <div 
