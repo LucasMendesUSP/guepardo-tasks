@@ -39,7 +39,7 @@ export default function App() {
   const [dependencies, setDependencies] = useState([{ id: 1, from: 1, to: 2 }]);
   const [events, setEvents] = useState(INITIAL_EVENTS);
   const [milestones, setMilestones] = useState([{ id: 1, title: 'Design Freeze', day: 15, color: '#FBBF24' }]);
-
+  
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || 1);
   const [currentDate] = useState(new Date(2026, 10, 4));
 
@@ -53,6 +53,10 @@ export default function App() {
   const [draftLinkName, setDraftLinkName] = useState('');
   const [draftLinkUrl, setDraftLinkUrl] = useState('');
 
+  // NOVO: Trava de segurança para aguardar a nuvem carregar antes de permitir salvamentos cegos
+  const [isLoaded, setIsLoaded] = useState(false);
+  
+  
   // --- FIREBASE: SINCRONIZAÇÃO EM TEMPO REAL ---
   const docRef = doc(db, "guepardo_data", "main_state");
   const isNetworkUpdate = useRef(false); // Flag para evitar loop infinito
@@ -70,7 +74,8 @@ export default function App() {
         if (data.dependencies) setDependencies(data.dependencies);
         if (data.events) setEvents(data.events);
         if (data.milestones) setMilestones(data.milestones);
-
+	
+	setIsLoaded(true); // LIBERA O APP: Dados da nuvem carregados com sucesso!
         // Reseta a flag rapidamente após a atualização dos estados
         setTimeout(() => { isNetworkUpdate.current = false; }, 100);
       } else {
@@ -83,6 +88,7 @@ export default function App() {
           events: INITIAL_EVENTS,
           milestones: [{ id: 1, title: 'Design Freeze', day: 15, color: '#FBBF24' }]
         });
+        setIsLoaded(true); // LIBERA O APP: Dados da nuvem carregados com sucesso!
       }
     });
 
@@ -98,6 +104,7 @@ export default function App() {
 
   // Listener para salvar alterações sempre que um estado for modificado localmente
   useEffect(() => {
+    if (!isLoaded) return;           // BLOQUEIA O SALVAMENTO: Só salva se já tiver baixado da nuvem!
     if (isNetworkUpdate.current) return; // Ignora se a mudança veio do Firebase (evita loop)
     
     saveDataToCloud({ projects, tasks, ganttSteps, dependencies, events, milestones });
@@ -778,6 +785,15 @@ export default function App() {
       </div>
     );
   };
+
+if (!isLoaded) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-[#1A1C23] text-white font-bold gap-4">
+        <div className="w-10 h-10 border-4 border-[#FF6B00] border-t-transparent rounded-full animate-spin"></div>
+        <div>A sincronizar dados da equipa Guepardo...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col-reverse md:flex-row h-[100dvh] font-sans bg-gray-100 overflow-hidden text-gray-800 selection:bg-[#FF6B00] selection:text-white">
