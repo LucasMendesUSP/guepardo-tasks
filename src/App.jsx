@@ -41,7 +41,12 @@ export default function App() {
   const [milestones, setMilestones] = useState([{ id: 1, title: 'Design Freeze', day: 15, color: '#FBBF24' }]);
   
   const [selectedProjectId, setSelectedProjectId] = useState(projects[0]?.id || 1);
-  const [currentDate] = useState(new Date(2026, 10, 4));
+  const [currentDate] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  });
+  const [viewMonth, setViewMonth] = useState(() => new Date().getMonth());
+  const [viewYear, setViewYear] = useState(() => new Date().getFullYear());
 
   const [taskDrawer, setTaskDrawer] = useState({ isOpen: false, taskId: null });
   const [ganttDrawer, setGanttDrawer] = useState({ isOpen: false, stepId: null });
@@ -657,15 +662,38 @@ export default function App() {
   };
 
   const renderCalendar = () => {
-    const daysInMonth = Array.from({ length: 30 }, (_, i) => i + 1);
-    const sortedEvents = [...events].sort((a, b) => new Date(a.date) - new Date(b.date));
+    const daysCount = new Date(viewYear, viewMonth + 1, 0).getDate();
+    const daysInMonth = Array.from({ length: daysCount }, (_, i) => i + 1);
+    const monthName = new Date(viewYear, viewMonth).toLocaleString('pt-BR', { month: 'long' });
+    const formattedMonthYear = `${monthName.charAt(0).toUpperCase() + monthName.slice(1)} ${viewYear}`;
+    const sortedEvents = [...events]
+      .filter(e => {
+        if (e.type === 'Feriado') return false;
+        const diff = Math.ceil((new Date(e.date + 'T00:00:00') - currentDate) / (1000 * 60 * 60 * 24));
+        return diff >= 0 && diff <= 45;
+      })
+      .sort((a, b) => {
+        const priority = { 'Marco': 1, 'Evento Normal': 2 };
+        const pA = priority[a.type] || 2;
+        const pB = priority[b.type] || 2;
+        if (pA !== pB) return pA - pB;
+        const diffA = Math.ceil((new Date(a.date + 'T00:00:00') - currentDate) / (1000 * 60 * 60 * 24));
+        const diffB = Math.ceil((new Date(b.date + 'T00:00:00') - currentDate) / (1000 * 60 * 60 * 24));
+        return diffA - diffB;
+      });
 
     return (
       <div className="flex-1 flex flex-col md:flex-row bg-gray-50 overflow-hidden relative">
         <div className="flex-1 p-4 md:p-8 overflow-y-auto">
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-            <h1 className="text-2xl md:text-3xl font-bold text-gray-900">Novembro 2026</h1>
-            <button onClick={() => setEventDrawer({ isOpen: true, event: { id: Date.now(), title: 'Novo Evento', date: '2026-11-10', type: 'Evento Normal', description: '', color: '#3a71ba' }})} className="w-full md:w-auto bg-[#1A1C23] text-white px-4 py-3 md:py-2 rounded font-bold hover:bg-gray-800">
+            <div className="flex items-center gap-3">
+              <h1 className="text-2xl md:text-3xl font-bold text-gray-900">{formattedMonthYear}</h1>
+              <div className="flex gap-1">
+                <button onClick={() => { if(viewMonth === 0) { setViewMonth(11); setViewYear(viewYear - 1); } else setViewMonth(viewMonth - 1); }} className="px-2 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded font-bold transition-colors">&lt;</button>
+                <button onClick={() => { if(viewMonth === 11) { setViewMonth(0); setViewYear(viewYear + 1); } else setViewMonth(viewMonth + 1); }} className="px-2 py-1 bg-gray-200 hover:bg-gray-300 text-gray-700 rounded font-bold transition-colors">&gt;</button>
+              </div>
+            </div>
+            <button onClick={() => setEventDrawer({ isOpen: true, event: { id: Date.now(), title: 'Novo Evento', date: `${viewYear}-${(viewMonth + 1).toString().padStart(2, '0')}-10`, type: 'Evento Normal', description: '', color: '#3a71ba' }})} className="w-full md:w-auto bg-[#1A1C23] text-white px-4 py-3 md:py-2 rounded font-bold hover:bg-gray-800">
               + Adicionar Evento
             </button>
           </div>
@@ -675,9 +703,10 @@ export default function App() {
               <div key={d} className="text-center font-bold text-gray-400 uppercase text-[10px] md:text-xs tracking-widest">{d}</div>
             ))}
             {daysInMonth.map(day => {
-              const dateStr = `2026-11-${day.toString().padStart(2, '0')}`;
+              const dateStr = `${viewYear}-${(viewMonth + 1).toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
               const dayEvents = events.filter(e => e.date === dateStr);
-              const isToday = day === 4; 
+              const targetDate = new Date(viewYear, viewMonth, day);
+              const isToday = targetDate.getTime() === currentDate.getTime();
               
               return (
                 <div key={day} className={`min-h-[80px] md:min-h-[120px] bg-white border p-1 md:p-2 rounded flex flex-col shadow-sm transition-all hover:shadow-md ${isToday ? 'border-[#FF6B00] ring-1 ring-[#FF6B00]' : 'border-gray-200'}`}>
@@ -686,7 +715,7 @@ export default function App() {
                     className="cursor-pointer text-right text-xs md:text-sm font-bold mb-1 md:mb-2 p-1 rounded hover:bg-gray-50"
                     style={dayEvents.length > 0 ? { color: dayEvents[0].color } : { color: isToday ? '#FF6B00' : '#9ca3af' }}
                   >
-                    NOV {day}
+                    {monthName.substring(0, 3).toUpperCase()} {day}
                   </div>
                   <div className="flex-1 flex flex-col gap-1 overflow-y-auto">
                     {dayEvents.map(e => (
@@ -707,7 +736,7 @@ export default function App() {
           </div>
           <div className="flex-1 p-4 md:p-6 space-y-4 overflow-y-auto">
             {sortedEvents.map(e => {
-              const diffDays = Math.ceil((new Date(e.date) - currentDate) / (1000 * 60 * 60 * 24));
+              const diffDays = Math.ceil((new Date(e.date + 'T00:00:00') - currentDate) / (1000 * 60 * 60 * 24));
               let statusText = diffDays < 0 ? 'Passou' : diffDays === 0 ? 'Hoje' : diffDays === 1 ? 'Amanhã' : `Faltam ${diffDays} dias`;
               return (
                 <div key={e.id} className="p-3 rounded-lg border border-gray-100 flex items-center gap-3 md:gap-4 hover:shadow-md hover:border-gray-200 transition-all cursor-pointer" onClick={() => setEventDrawer({ isOpen: true, event: { ...e }})}>
